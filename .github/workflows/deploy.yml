@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to Ncloud
 
 on:
   push:
@@ -28,7 +28,11 @@ jobs:
         run: npm run predeploy
 
       - name: Deploy
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+        run: npm run build:deploy:ncloud
+        env:
+          NCLOUD_ACCESS_KEY: ${{ secrets.NCLOUD_ACCESS_KEY }}
+          NCLOUD_SECRET_KEY: ${{ secrets.NCLOUD_SECRET_KEY }}
+          NCLOUD_EDGE_ID: ${{ secrets.NCLOUD_EDGE_ID }}
+          NCLOUD_BUCKET: ${{ secrets.NCLOUD_BUCKET }}
+          NCLOUD_ENDPOINT: ${{ vars.NCLOUD_ENDPOINT }}
+          NCLOUD_REGION: ${{ vars.NCLOUD_REGION }}

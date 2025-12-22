@@ -114,7 +114,7 @@ function App() {
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter basename="/PKfriends/">
+        <BrowserRouter>
           <AppContent />
         </BrowserRouter>
       </TooltipProvider>
