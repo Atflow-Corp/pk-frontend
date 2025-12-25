@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Link } from 'react-router-dom';
 import Header from '@/components/ui/Header';
 import Footer from '@/components/ui/Footer';
+import { api } from '@/lib/api';
 
 interface TermsAgreementProps {
   onBack: () => void;
@@ -20,6 +21,7 @@ const TermsAgreement = ({ onBack, onAgree }: TermsAgreementProps) => {
     serviceTerms: true,
     privacyPolicy: true
   });
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleAllAgreementChange = (checked: boolean) => {
     setAgreements({
@@ -42,14 +44,22 @@ const TermsAgreement = ({ onBack, onAgree }: TermsAgreementProps) => {
     setAgreements(newAgreements);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!agreements.ageCheck || !agreements.serviceTerms || !agreements.privacyPolicy) {
       toast.error("필수 약관에 동의해주세요.");
       return;
     }
     
-    toast.success("약관에 동의하셨습니다.");
-    onAgree();
+    setIsLoading(true);
+    try {
+      await api.agreeTerms();
+      toast.success("약관에 동의하셨습니다.");
+      onAgree();
+    } catch (error) {
+      console.error("약관 동의 실패:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -145,9 +155,9 @@ const TermsAgreement = ({ onBack, onAgree }: TermsAgreementProps) => {
             <Button 
               onClick={handleConfirm} 
               className="w-full"
-              disabled={!agreements.ageCheck || !agreements.serviceTerms || !agreements.privacyPolicy}
+              disabled={!agreements.ageCheck || !agreements.serviceTerms || !agreements.privacyPolicy || isLoading}
             >
-              확인
+              {isLoading ? "처리 중..." : "확인"}
             </Button>
 
             {/* 뒤로가기 버튼 */}

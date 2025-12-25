@@ -19,6 +19,28 @@ const API_BASE_URL =
 const TOKEN_KEY = "tdmfriends:authToken";
 
 /**
+ * 사용자 정보 저장 키
+ */
+const USER_KEY = "tdmfriends:user";
+
+/**
+ * 사용자 정보 타입
+ */
+export interface UserInfo {
+  id: number;
+  name: string;
+  phone: string;
+  email?: string;
+  organization?: {
+    id: number;
+    name: string;
+  };
+  organizationId?: number;
+  medicalRole?: "doctor" | "nurse" | "other";
+  termsAgreedAt?: string;
+}
+
+/**
  * 인증 토큰 관리
  */
 export const tokenManager = {
@@ -53,6 +75,60 @@ export const tokenManager = {
     } catch {
       // no-op
     }
+  },
+
+  /**
+   * 인증 여부 확인
+   */
+  isAuthenticated(): boolean {
+    return this.get() !== null;
+  },
+};
+
+/**
+ * 사용자 정보 관리
+ */
+export const userManager = {
+  /**
+   * 사용자 정보 가져오기
+   */
+  get(): UserInfo | null {
+    try {
+      const raw = window.localStorage.getItem(USER_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as UserInfo;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * 사용자 정보 저장
+   */
+  set(user: UserInfo): void {
+    try {
+      window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+    } catch {
+      // no-op
+    }
+  },
+
+  /**
+   * 사용자 정보 제거
+   */
+  remove(): void {
+    try {
+      window.localStorage.removeItem(USER_KEY);
+    } catch {
+      // no-op
+    }
+  },
+
+  /**
+   * 사용자 정보가 있는지 확인
+   */
+  hasUser(): boolean {
+    return this.get() !== null;
   },
 };
 
@@ -198,6 +274,11 @@ export const api = {
       tokenManager.set(token);
     }
 
+    // 사용자 정보 저장
+    if (response.data.user) {
+      userManager.set(response.data.user as UserInfo);
+    }
+
     return response.data;
   },
 
@@ -222,6 +303,7 @@ export const api = {
       console.error("로그아웃 API 호출 실패:", error);
     } finally {
       tokenManager.remove();
+      userManager.remove();
     }
   },
 
@@ -230,6 +312,12 @@ export const api = {
    */
   async getUserInfo() {
     const response = await axiosInstance.get("/user/info/");
+
+    // 사용자 정보 저장
+    if (response.data) {
+      userManager.set(response.data as UserInfo);
+    }
+
     return response.data;
   },
 
@@ -242,6 +330,12 @@ export const api = {
     medicalRole?: "doctor" | "nurse" | "other";
   }) {
     const response = await axiosInstance.patch("/user/info/", data);
+
+    // 사용자 정보 업데이트 (응답 전체를 저장)
+    if (response.data) {
+      userManager.set(response.data as UserInfo);
+    }
+
     return response.data;
   },
 
@@ -250,6 +344,12 @@ export const api = {
    */
   async agreeTerms() {
     const response = await axiosInstance.post("/user/agree_terms/");
+
+    // 사용자 정보 업데이트 (응답 전체를 저장)
+    if (response.data) {
+      userManager.set(response.data as UserInfo);
+    }
+
     return response.data;
   },
 

@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import Footer from '@/components/ui/Footer';
+import { api, tokenManager, userManager } from '@/lib/api';
 
 // 동적 임포트로 컴포넌트들을 lazy loading
 const Index = lazy(() => import("./pages/Index"));
@@ -27,15 +28,18 @@ function AppContent() {
 
   const handleLogin = () => {
     setIsAuthenticated(true);
-    try { window.localStorage.setItem('tdmfriends:isAuthenticated', 'true'); } catch {}
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch (error) {
+      console.error("로그아웃 API 호출 실패:", error);
+    }
     setIsAuthenticated(false);
     setShowTermsAgreement(false);
     setShowUserRegistration(false);
     setPhoneNumber('');
-    try { window.localStorage.removeItem('tdmfriends:isAuthenticated'); } catch {}
     // 로그아웃 후 로그인 페이지로 리다이렉트
     navigate('/');
   };
@@ -61,15 +65,23 @@ function AppContent() {
     setShowUserRegistration(false);
     // 회원가입 완료 후 자동으로 로그인 처리하여 서비스 홈으로 이동
     setIsAuthenticated(true);
-    try { window.localStorage.setItem('tdmfriends:isAuthenticated', 'true'); } catch {}
     console.log("회원가입이 완료되었습니다. 서비스 홈으로 이동합니다.");
   };
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem('tdmfriends:isAuthenticated');
-      if (saved === 'true') setIsAuthenticated(true);
-    } catch {}
+    // 토큰 기반 인증 확인
+    const isAuth = tokenManager.isAuthenticated();
+    setIsAuthenticated(isAuth);
+    
+    // 토큰이 있는데 사용자 정보가 없으면 조회해서 저장
+    if (isAuth && !userManager.hasUser()) {
+      api.getUserInfo().catch((error) => {
+        console.error("사용자 정보 조회 실패:", error);
+        // 사용자 정보 조회 실패 시 토큰이 유효하지 않을 수 있으므로 로그아웃 처리
+        tokenManager.remove();
+        setIsAuthenticated(false);
+      });
+    }
   }, []);
 
   return (
