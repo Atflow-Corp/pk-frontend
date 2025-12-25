@@ -17,6 +17,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { storage, STORAGE_KEYS } from "@/lib/storage";
+import ProfileSettings, { UserProfile } from "@/components/ProfileSettings";
+import { hasTdmResult } from "@/lib/tdm";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export interface Patient {
   id: string;
@@ -91,6 +102,10 @@ const Index = ({ onLogout }: IndexProps) => {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [isDark, setIsDark] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState("workflow");
+  const [showTdmResultAlert, setShowTdmResultAlert] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -130,6 +145,13 @@ const Index = ({ onLogout }: IndexProps) => {
       const found = revivePatients.find(p => p.id === savedSelectedPatientId) || null;
       setSelectedPatient(found);
     }
+
+    // 사용자 프로필 정보 로드
+    const savedUserProfile = storage.getJSON<UserProfile>(STORAGE_KEYS.userProfile);
+    if (savedUserProfile) {
+      setUserProfile(savedUserProfile);
+    }
+
     setHydrated(true);
   }, []);
 
@@ -223,23 +245,29 @@ const Index = ({ onLogout }: IndexProps) => {
                   <Button variant="ghost" className="flex items-center gap-2">
                     <Avatar className="h-9 w-9">
                       <AvatarImage src={`https://avatar.vercel.sh/user.png`} alt="User" />
-                      <AvatarFallback>사용자</AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium">사용자</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">사용자</p>
-                      <p className="text-xs leading-none text-muted-foreground">
-                        user@pk-friends.com
-                      </p>
-                      <p className="text-xs leading-none text-muted-foreground pt-1">
-                        소속: PK 프렌즈 대학병원
-                      </p>
-                    </div>
-                  </DropdownMenuLabel>
+                    <AvatarFallback>
+                      {userProfile?.name ? userProfile.name.charAt(0) : "사용자"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium">
+                    {userProfile?.name || "사용자"}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {userProfile?.name || "사용자"}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {userProfile?.email || userProfile?.phone || "정보 없음"}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground pt-1">
+                      소속: {userProfile?.organization || "정보 없음"}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                     <div className="flex items-center justify-between w-full">
@@ -251,7 +279,7 @@ const Index = ({ onLogout }: IndexProps) => {
                       />
                     </div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowProfileSettings(true)}>
                     프로필 설정
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={onLogout}>
@@ -265,7 +293,25 @@ const Index = ({ onLogout }: IndexProps) => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs defaultValue="workflow" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(value) => {
+          // "Let's TDM" 탭으로 전환할 때만 TDM 결과 확인 (다른 탭에서 workflow로 전환할 때만)
+          if (value === "workflow" && activeTab !== "workflow" && selectedPatient) {
+            // 선택된 처방전이 있는지 확인
+            const patientPrescriptions = prescriptions.filter(p => p.patientId === selectedPatient.id);
+            if (patientPrescriptions.length > 0) {
+              const latestPrescription = patientPrescriptions[0]; // 최신 처방전 사용
+              const hasResult = hasTdmResult(selectedPatient.id, latestPrescription.drugName);
+              
+              if (hasResult) {
+                // 이미 결과가 있는 경우 얼럿 표시하고 탭 전환 안 함
+                setShowTdmResultAlert(true);
+                return;
+              }
+            }
+          }
+          // 다른 탭으로 전환하거나 결과가 없는 경우 정상적으로 전환
+          setActiveTab(value);
+        }} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4 bg-white dark:bg-slate-800 border dark:border-slate-700 shadow-sm h-[52px]">
             <TabsTrigger
               value="workflow"
@@ -329,6 +375,38 @@ const Index = ({ onLogout }: IndexProps) => {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* 프로필 설정 모달 */}
+      <ProfileSettings
+        open={showProfileSettings}
+        onOpenChange={(open) => {
+          setShowProfileSettings(open);
+          // 프로필 설정이 닫힐 때 업데이트된 프로필 정보 다시 로드
+          if (!open) {
+            const savedUserProfile = storage.getJSON<UserProfile>(STORAGE_KEYS.userProfile);
+            if (savedUserProfile) {
+              setUserProfile(savedUserProfile);
+            }
+          }
+        }}
+      />
+
+      {/* TDM 결과 이미 존재 알림 AlertDialog */}
+      <AlertDialog open={showTdmResultAlert} onOpenChange={setShowTdmResultAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>TDM Workflow 완료 안내</AlertDialogTitle>
+            <AlertDialogDescription>
+              이미 TDM Workflow를 완료한 상태입니다. 데이터를 수정한 후 새로운 예측 결과 확인을 원하실 경우, 하단의 TDM Simulation 버튼을 선택하고 새로 결과를 확인할 수 있습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowTdmResultAlert(false)}>
+              확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
