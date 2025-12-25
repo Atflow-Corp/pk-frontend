@@ -31,16 +31,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Camera, Trash2, HeadphonesIcon } from "lucide-react";
 import { storage, STORAGE_KEYS } from "@/lib/storage";
+import { userManager, type UserInfo } from "@/lib/api";
 import CustomerService from "./CustomerService";
-
-export interface UserProfile {
-  name: string;
-  email: string;
-  phone: string;
-  organization: string;
-  role: "doctor" | "nurse" | "other";
-  profileImage?: string;
-}
 
 interface ProfileSettingsProps {
   open: boolean;
@@ -48,13 +40,7 @@ interface ProfileSettingsProps {
 }
 
 const ProfileSettings = ({ open, onOpenChange }: ProfileSettingsProps) => {
-  const [profile, setProfile] = useState<UserProfile>({
-    name: "사용자",
-    email: "user@pk-friends.com",
-    phone: "",
-    organization: "PK 프렌즈 대학병원",
-    role: "doctor",
-  });
+  const [user, setUser] = useState<UserInfo | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const [showCustomerService, setShowCustomerService] = useState(false);
@@ -66,18 +52,20 @@ const ProfileSettings = ({ open, onOpenChange }: ProfileSettingsProps) => {
   }, [open]);
 
   const loadProfile = () => {
-    const savedProfile = storage.getJSON<UserProfile>(STORAGE_KEYS.userProfile);
-    if (savedProfile) {
-      setProfile(savedProfile);
-      if (savedProfile.profileImage) {
-        setProfileImage(savedProfile.profileImage);
-      }
+    // userManager에서 사용자 정보 로드
+    const userInfo = userManager.get();
+    if (userInfo) {
+      setUser(userInfo);
     }
-  };
-
-  const saveProfile = (updatedProfile: UserProfile) => {
-    setProfile(updatedProfile);
-    storage.setJSON(STORAGE_KEYS.userProfile, updatedProfile);
+    
+    // TODO: 프로필 이미지 API 연동 예정
+    // GET /api/user/profile_image/ - 프로필 이미지 조회
+    // 응답: { "url": "https://..." } 또는 { "url": null }
+    // 현재는 localStorage에서 로드하지만, 백엔드 API 연동 후 api.getUserProfileImage()로 변경 예정
+    const savedProfileImage = storage.getJSON<{ profileImage?: string }>(STORAGE_KEYS.userProfile);
+    if (savedProfileImage?.profileImage) {
+      setProfileImage(savedProfileImage.profileImage);
+    }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,8 +87,13 @@ const ProfileSettings = ({ open, onOpenChange }: ProfileSettingsProps) => {
       reader.onloadend = () => {
         const imageDataUrl = reader.result as string;
         setProfileImage(imageDataUrl);
-        const updatedProfile = { ...profile, profileImage: imageDataUrl };
-        saveProfile(updatedProfile);
+        
+        // TODO: 프로필 이미지 API 연동 예정
+        // PUT /api/user/profile_image/ - 프로필 이미지 업로드
+        // 응답: { "url": "https://..." } (업로드된 이미지 URL)
+        // 백엔드 API 연동 후 api.updateUserProfileImage(file)로 변경 예정
+        // 현재는 localStorage에 임시 저장
+        storage.setJSON(STORAGE_KEYS.userProfile, { profileImage: imageDataUrl });
       };
       reader.readAsDataURL(file);
     }
@@ -110,7 +103,8 @@ const ProfileSettings = ({ open, onOpenChange }: ProfileSettingsProps) => {
     setShowDeleteAlert(true);
   };
 
-  const getRoleLabel = (role: string) => {
+  const getRoleLabel = (role?: string) => {
+    if (!role) return "-";
     switch (role) {
       case "doctor":
         return "의사";
@@ -147,9 +141,9 @@ const ProfileSettings = ({ open, onOpenChange }: ProfileSettingsProps) => {
                     </div> */}
                     <div className="flex flex-col items-center gap-4">
                       <Avatar className="h-32 w-32">
-                        <AvatarImage src={profileImage || profile.profileImage} alt={profile.name} />
+                        <AvatarImage src={profileImage || undefined} alt={user?.name || "사용자"} />
                         <AvatarFallback className="text-3xl">
-                          {profile.name.charAt(0)}
+                          {user?.name?.charAt(0) || "사용자"}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col gap-2 w-full">
@@ -184,24 +178,24 @@ const ProfileSettings = ({ open, onOpenChange }: ProfileSettingsProps) => {
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label>이름</Label>
-                        <Input value={profile.name} disabled className="bg-muted" />
+                        <Input value={user?.name || "-"} disabled className="bg-muted" />
                       </div>
                       <div className="space-y-2">
                         <Label>이메일</Label>
-                        <Input value={profile.email} disabled className="bg-muted" />
+                        <Input value={user?.email || "-"} disabled className="bg-muted" />
                       </div>
                       <div className="space-y-2">
                         <Label>전화번호</Label>
-                        <Input value={profile.phone || "-"} disabled className="bg-muted" />
+                        <Input value={user?.phone || "-"} disabled className="bg-muted" />
                       </div>
                       <div className="space-y-2">
                         <Label>소속기관</Label>
-                        <Input value={profile.organization} disabled className="bg-muted" />
+                        <Input value={user?.organization?.name || "-"} disabled className="bg-muted" />
                       </div>
                       <div className="space-y-2">
                         <Label>직무</Label>
                         <Input
-                          value={getRoleLabel(profile.role)}
+                          value={getRoleLabel(user?.medicalRole)}
                           disabled
                           className="bg-muted"
                         />
@@ -274,8 +268,8 @@ const ProfileSettings = ({ open, onOpenChange }: ProfileSettingsProps) => {
       <CustomerService
         open={showCustomerService}
         onOpenChange={setShowCustomerService}
-        userName={profile.name}
-        userEmail={profile.email}
+        userName={user?.name || "사용자"}
+        userEmail={user?.email || ""}
       />
     </>
   );

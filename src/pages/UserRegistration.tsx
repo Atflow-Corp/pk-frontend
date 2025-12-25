@@ -9,8 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 import { toast } from "sonner";
 import Header from '@/components/ui/Header';
 import Footer from '@/components/ui/Footer';
-import { storage, STORAGE_KEYS } from '@/lib/storage';
-import type { UserProfile } from '@/components/ProfileSettings';
+import { api } from '@/lib/api';
 
 interface UserRegistrationProps {
   onBack: () => void;
@@ -18,20 +17,44 @@ interface UserRegistrationProps {
   initialPhoneNumber?: string;
 }
 
+interface Organization {
+  id: string;
+  name: string;
+}
+
 const UserRegistration = ({ onBack, onComplete, initialPhoneNumber = '' }: UserRegistrationProps) => {
   const [formData, setFormData] = useState({
     name: '',
     phoneNumber: initialPhoneNumber,
-    organization: '',
+    organizationId: '',
     medicalRole: ''
   });
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingOrgs, setIsLoadingOrgs] = useState(true);
 
-  // 사전 등록된 병원 목록
-  const organizations = ['앳플로우'];
-  
-  // 의료진 구분 목록
-  const medicalRoles = ['의사', '간호사', '기타'];
+  // 의료진 구분 목록 (백엔드 값으로 매핑)
+  const medicalRoles = [
+    { label: '의사', value: 'doctor' },
+    { label: '간호사', value: 'nurse' },
+    { label: '기타', value: 'other' }
+  ];
+
+  // Organization 목록 로드
+  useEffect(() => {
+    const loadOrganizations = async () => {
+      try {
+        const orgs = await api.getOrganizations() as Organization[];
+        setOrganizations(orgs);
+      } catch (error) {
+        console.error("Organization 목록 로드 실패:", error);
+      } finally {
+        setIsLoadingOrgs(false);
+      }
+    };
+    loadOrganizations();
+  }, []);
   
   // initialPhoneNumber가 변경되면 formData 업데이트
   useEffect(() => {
@@ -54,7 +77,7 @@ const UserRegistration = ({ onBack, onComplete, initialPhoneNumber = '' }: UserR
   const isFormValid = () => {
     return formData.name.trim() !== '' && 
            formData.phoneNumber.trim() !== '' && 
-           formData.organization !== '' && 
+           formData.organizationId !== '' && 
            formData.medicalRole !== '';
   };
 
@@ -67,34 +90,22 @@ const UserRegistration = ({ onBack, onComplete, initialPhoneNumber = '' }: UserR
     setShowWelcomeDialog(true);
   };
 
-  const handleWelcomeConfirm = () => {
-    try {
-      // 회원가입 완료된 전화번호를 localStorage에 저장 (기존 로직 유지)
-      const registeredUsers = JSON.parse(window.localStorage.getItem('tdmfriends:registeredUsers') || '[]');
-      if (!registeredUsers.includes(formData.phoneNumber)) {
-        registeredUsers.push(formData.phoneNumber);
-        window.localStorage.setItem('tdmfriends:registeredUsers', JSON.stringify(registeredUsers));
-      }
-      
-      // 사용자 프로필 정보를 localStorage에 저장
-      const userProfile: UserProfile = {
-        name: formData.name,
-        email: '', // 회원가입 시 이메일 입력 없음
-        phone: formData.phoneNumber,
-        organization: formData.organization,
-        role: formData.medicalRole === '의사' ? 'doctor' : 
-              formData.medicalRole === '간호사' ? 'nurse' : 'other',
-      };
-      
-      storage.setJSON(STORAGE_KEYS.userProfile, userProfile);
-      console.log('회원가입 정보가 저장되었습니다:', userProfile);
-    } catch (error) {
-      console.error('회원가입 정보 저장 실패:', error);
-      toast.error('회원가입 정보 저장 중 오류가 발생했습니다.');
-    }
-    
+  const handleWelcomeConfirm = async () => {
     setShowWelcomeDialog(false);
-    onComplete();
+    setIsLoading(true);
+    try {
+      await api.updateUserInfo({
+        name: formData.name,
+        organizationId: formData.organizationId,
+        medicalRole: formData.medicalRole as 'doctor' | 'nurse' | 'other',
+      });
+      toast.success("회원정보가 저장되었습니다.");
+      onComplete();
+    } catch (error) {
+      console.error("회원정보 저장 실패:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -141,14 +152,18 @@ const UserRegistration = ({ onBack, onComplete, initialPhoneNumber = '' }: UserR
                 <Label htmlFor="organization" className="text-sm font-medium">
                   소속기관 <span className="text-red-500">*</span>
                 </Label>
-                <Select value={formData.organization} onValueChange={(value) => handleInputChange('organization', value)}>
+                <Select 
+                  value={formData.organizationId} 
+                  onValueChange={(value) => handleInputChange('organizationId', value)}
+                  disabled={isLoadingOrgs}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="소속기관을 선택해주세요" />
+                    <SelectValue placeholder={isLoadingOrgs ? "로딩 중..." : "소속기관을 선택해주세요"} />
                   </SelectTrigger>
                   <SelectContent>
                     {organizations.map((org) => (
-                      <SelectItem key={org} value={org}>
-                        {org}
+                      <SelectItem key={org.id} value={org.id}>
+                        {org.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -166,8 +181,8 @@ const UserRegistration = ({ onBack, onComplete, initialPhoneNumber = '' }: UserR
                   </SelectTrigger>
                   <SelectContent>
                     {medicalRoles.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {role}
+                      <SelectItem key={role.value} value={role.value}>
+                        {role.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -180,9 +195,9 @@ const UserRegistration = ({ onBack, onComplete, initialPhoneNumber = '' }: UserR
             <Button 
               onClick={handleComplete} 
               className="w-full"
-              disabled={!isFormValid()}
+              disabled={!isFormValid() || isLoading}
             >
-              회원가입 완료
+              {isLoading ? "저장 중..." : "회원가입 완료"}
             </Button>
 
             {/* 로그인으로 돌아가기 버튼 */}

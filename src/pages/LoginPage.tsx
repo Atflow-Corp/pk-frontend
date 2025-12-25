@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from "sonner";
 import Header from '@/components/ui/Header';
 import Footer from '@/components/ui/Footer';
+import { api } from '@/lib/api';
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -12,26 +13,16 @@ interface LoginPageProps {
   onPhoneNumberSet?: (phoneNumber: string) => void;
 }
 
-// Demo: List of invited phone numbers (임시처리)
-const invitedPhoneNumbers = ["01012345678", "01087654321"];
-
-// 임시: 회원가입 완료 여부 확인 (실제로는 API로 확인)
-const checkUserRegistered = (phoneNumber: string): boolean => {
-  try {
-    const registeredUsers = JSON.parse(window.localStorage.getItem('tdmfriends:registeredUsers') || '[]');
-    return registeredUsers.includes(phoneNumber);
-  } catch {
-    return false;
-  }
-};
-
 const LoginPage = ({ onLogin, onShowTermsAgreement, onPhoneNumberSet }: LoginPageProps) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isVerificationSent, setIsVerificationSent] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
+  const [isRequestingCode, setIsRequestingCode] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [verificationId, setVerificationId] = useState<string | undefined>();
 
   // 인증번호 전송 핸들러
-  const handleSendVerification = () => {
+  const handleSendVerification = async () => {
     if (!phoneNumber) {
       toast.error("휴대폰 번호를 입력해주세요.");
       return;
@@ -43,44 +34,65 @@ const LoginPage = ({ onLogin, onShowTermsAgreement, onPhoneNumberSet }: LoginPag
       return;
     }
 
-    // 임시처리: 초대받은 전화번호 데이터를 구축하지 않은 상태이므로
-    // 모든 번호를 초대받은 사용자로 처리하고 인증 단계로 진행
-    // TODO: 실제 초대받은 번호 데이터 구축 후 아래 주석 처리된 로직으로 교체
-    // if (!invitedPhoneNumbers.includes(phoneNumber)) {
-    //   toast.error("초대받지 않은 번호입니다. 관리자에게 문의하세요.");
-    //   return;
-    // }
-
-    // 임시처리: 초대받은 사용자인 경우 별도 알림 없이 즉시 인증 API 호출
-    // 실제 앱에서는 여기서 인증번호 발송 API를 호출합니다.
-    console.log(`인증번호 발송 API 호출: ${phoneNumber}`);
-    setIsVerificationSent(true);
-    // 알림 없이 조용히 인증번호 입력창 노출
+    setIsRequestingCode(true);
+    try {
+      const result = await api.requestCode(phoneNumber, 'login') as {
+        id?: string;
+        expiresIn?: number;
+      };
+      
+      // verificationId가 응답에 포함되어 있으면 저장
+      if (result.id) {
+        setVerificationId(result.id);
+      }
+      
+      setIsVerificationSent(true);
+      toast.success("인증번호가 발송되었습니다.");
+    } catch (error) {
+      // 에러는 api 인터셉터에서 이미 처리됨
+      console.error("인증번호 발송 실패:", error);
+    } finally {
+      setIsRequestingCode(false);
+    }
   };
 
   // 로그인 핸들러
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!verificationCode) {
       toast.error("인증번호를 입력해주세요.");
       return;
     }
 
-    // 임시처리: 인증번호 확인 API 호출
-    console.log(`인증번호 확인 API 호출: ${phoneNumber}, 코드: ${verificationCode}`);
-    // 실제 앱에서는 여기서 인증번호 검증 API를 호출하고 응답을 확인합니다.
-    // 임시처리: 여기서는 항상 성공으로 가정
+    setIsLoggingIn(true);
+    try {
+      const result = await api.login(phoneNumber, verificationCode, verificationId) as {
+        requiresTerms?: boolean;
+        requiresDefaultInfo?: boolean;
+        user?: unknown;
+      };
 
-    // 인증 성공 후 회원가입 여부 확인
-    const isRegistered = checkUserRegistered(phoneNumber);
+      // 약관 동의 필요 여부 확인
+      if (result.requiresTerms) {
+        onPhoneNumberSet?.(phoneNumber);
+        onShowTermsAgreement();
+        return;
+      }
 
-    if (!isRegistered) {
-      // 회원가입 안 한 경우: 약관 동의로 이동
-      onPhoneNumberSet?.(phoneNumber);
-      onShowTermsAgreement();
-    } else {
-      // 회원가입 한 경우: 서비스 홈으로 이동
+      // 기본 정보 입력 필요 여부 확인
+      if (result.requiresDefaultInfo) {
+        onPhoneNumberSet?.(phoneNumber);
+        onShowTermsAgreement();
+        return;
+      }
+
+      // 로그인 성공
       toast.success("로그인되었습니다.");
       onLogin();
+    } catch (error) {
+      // 에러는 api 인터셉터에서 이미 처리됨
+      console.error("로그인 실패:", error);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -112,8 +124,9 @@ const LoginPage = ({ onLogin, onShowTermsAgreement, onPhoneNumberSet }: LoginPag
                     variant="outline" 
                     className="h-10 text-gray-700 border-gray-300 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-50 dark:border-gray-600 dark:hover:bg-slate-800 dark:active:bg-slate-700"
                     onClick={handleSendVerification}
+                    disabled={isRequestingCode}
                   >
-                    인증번호 전송
+                    {isRequestingCode ? "전송 중..." : "인증번호 전송"}
                   </Button>
                 </div>
                 {isVerificationSent && (
@@ -130,9 +143,9 @@ const LoginPage = ({ onLogin, onShowTermsAgreement, onPhoneNumberSet }: LoginPag
               <Button 
                 onClick={handleLogin} 
                 className="w-full flex items-center gap-2"
-                disabled={!isVerificationSent || !verificationCode}
+                disabled={!isVerificationSent || !verificationCode || isLoggingIn}
               >
-                로그인
+                {isLoggingIn ? "로그인 중..." : "로그인"}
               </Button>
               <div className="text-center space-y-2">
                 <div className="text-xs text-muted-foreground pt-2 space-y-1">
